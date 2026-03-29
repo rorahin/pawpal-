@@ -3,7 +3,11 @@ PawPal+ — Logic Layer
 Core classes for managing pet care tasks and generating a daily schedule.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+# Maps priority labels to sort order (lower number = higher priority).
+# Used by Scheduler.generate_plan() to rank non-mandatory tasks.
+PRIORITY_ORDER: dict[str, int] = {"high": 0, "medium": 1, "low": 2}
 
 
 # ---------------------------------------------------------------------------
@@ -112,11 +116,13 @@ class Scheduler:
         """
         return []
 
-    def explain_plan(self) -> str:
+    def explain_plan(self, plan: list[Task] | None = None) -> str:
         """
         Return a human-readable explanation of why tasks were included or skipped.
 
-        Calls generate_plan() internally and compares result against full task list.
-        Returns a formatted string summarising scheduled vs. skipped tasks and reasons.
+        Accepts an optional pre-computed plan to avoid calling generate_plan() twice.
+        If plan is None, generate_plan() is called internally.
+        Compares scheduled tasks against self.tasks to determine what was skipped and why.
         """
+        _ = plan  # TODO: use in implementation
         return ""

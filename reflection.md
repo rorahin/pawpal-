@@ -12,6 +12,16 @@ The three core actions a user should be able to perform in PawPal+ are:
 
 3. **Generate and view today's plan** — The user asks the scheduler to produce a daily care plan. The app selects and orders tasks based on available time, task priority, and whether a task is mandatory, then shows the resulting plan with a short explanation of why tasks were included or skipped.
 
+The initial design uses four classes: `Owner`, `Pet`, `Task`, and `Scheduler`.
+
+`Owner` is a simple data class that holds the owner's name and the number of minutes they have available for pet care each day. Its only responsibility is to carry that time constraint into the scheduler.
+
+`Pet` is also a data class. It stores the pet's name, species, age, and any special needs such as medication or dietary restrictions. It does not contain logic — it exists purely to give the scheduler context about what kind of care the pet requires.
+
+`Task` represents a single care activity. It holds the task name, category, duration in minutes, a priority level (high, medium, or low), a completion flag, and a mandatory flag. The mandatory flag is what separates tasks that must happen regardless of time — like medication — from tasks that are merely important. `Task` has one method, `mark_complete()`, which sets the completed flag to true. Behavior belongs with the data it mutates, so this method lives on `Task` rather than on the scheduler.
+
+`Scheduler` is the only class that contains real logic. It holds a reference to an `Owner`, a `Pet`, and a list of `Task` objects. It is responsible for adding and removing tasks, generating a daily plan that respects the owner's time limit and task priorities, and producing a plain-language explanation of which tasks were scheduled and why others were skipped. The separation between `generate_plan()` and `explain_plan()` keeps data processing and output formatting in distinct methods.
+
 **Classes and responsibilities:**
 
 | Class | Responsibility |
@@ -65,9 +75,18 @@ classDiagram
 
 **b. Design changes**
 
-The initial diagram used composition (`*--`) for `Scheduler → Owner` and `Scheduler → Pet`. This was corrected to association (`-->`), because `Owner` and `Pet` exist independently of the `Scheduler` — destroying the scheduler should not destroy the owner or pet. Aggregation (`o--`) was kept for `Task` since the scheduler manages a collection of tasks that can be added or removed.
+Three changes were made after reviewing the skeleton against the design.
 
-A `mandatory: bool` field was also added to `Task` after review. High priority alone does not mean a task must happen — medication, for example, is non-negotiable regardless of available time. This field makes that distinction explicit in the model.
+**1. Relationship correction — Scheduler → Owner and Scheduler → Pet**
+The initial diagram used composition (`*--`) for both relationships. This was corrected to association (`-->`), because `Owner` and `Pet` exist independently of the `Scheduler`. Destroying the scheduler should not destroy the owner or pet. Aggregation (`o--`) was kept for `Task` because the scheduler manages a collection of tasks that can be added or removed without owning their lifecycle.
+
+**2. Added `mandatory: bool` to Task**
+High priority alone does not mean a task must happen. A medication task, for example, cannot be skipped just because time runs out. The `mandatory` flag was added to make that distinction explicit in the model. Without it, `generate_plan()` would have no way to differentiate "skip if needed" from "never skip."
+
+**3. Added `PRIORITY_ORDER` constant and fixed `explain_plan()` signature**
+A review of the skeleton identified two logic bottlenecks. First, `priority` is stored as a plain string (`"high"`, `"medium"`, `"low"`), which cannot be sorted directly. A module-level `PRIORITY_ORDER` dictionary mapping each label to an integer rank was added so `generate_plan()` can sort tasks correctly without duplicating that mapping inside the method.
+
+Second, `explain_plan()` was originally designed to call `generate_plan()` internally with no parameters. This means the plan would be computed twice whenever a caller used both methods. The signature was updated to `explain_plan(self, plan: list[Task] | None = None)` so a caller can pass in a pre-computed plan and avoid redundant work. If no plan is provided, `explain_plan()` will generate one itself.
 
 ---
 
