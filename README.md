@@ -50,3 +50,41 @@ pip install -r requirements.txt
 5. Add tests to verify key behaviors.
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
+
+## Testing PawPal+
+
+Run the full automated test suite from the project root:
+
+```bash
+python -m pytest
+```
+
+To run with verbose output (recommended to see individual test names):
+
+```bash
+python -m pytest tests/test_pawpal.py -v
+```
+
+### What the tests cover
+
+- **Task completion** — `mark_complete()` updates `completed` status correctly; calling it twice on a non-recurring task raises `RuntimeError`.
+- **Task addition** — `Pet.add_task()` increments the task list and rejects exact and case-insensitive duplicate names with `ValueError`.
+- **Sorting correctness** — `Scheduler.sort_by_time()` orders tasks from earliest to latest `scheduled_time`; tasks with no `scheduled_time` always sort to the end.
+- **Recurring task behavior** — completing a daily or weekly task via `Pet.complete_recurring_task()` creates exactly one new occurrence with the correct next `due_date`, marks the current instance complete, and prevents duplicate future occurrences from being created on a second call.
+- **Conflict detection** — `Scheduler.detect_time_conflicts()` flags active tasks sharing a `scheduled_time` slot, labels same-pet vs. cross-pet conflicts correctly, and excludes completed or future-due tasks from triggering false warnings.
+
+### Test suite summary
+
+| Tier | Area | Tests |
+| ------ | ------ | ------- |
+| Foundation | Task validation, duplicate protection | 8 |
+| Core scheduling | Plan generation, mandatory tasks, budget overrun | 7 |
+| Recurring logic | Daily/weekly cadence, duplicate protection, `ValueError` guard | 6 |
+| Conflict detection | Same-pet, cross-pet, completed/future exclusion | 5 |
+| Filter and sort | `filter_by_status`, `filter_by_pet`, `sort_by_time` | 7 |
+| Phase 5 required | Sorting, recurrence, conflict — algorithmic correctness | 3 |
+| **Total** | | **40** |
+
+**Confidence Level:** ★★★★☆ (4/5)
+
+The suite provides strong coverage of core scheduling logic, recurring task state transitions, conflict detection rules, and input validation. Room remains for additional edge-case coverage: multi-pet plans with mixed mandatory/non-mandatory tasks and tight budgets, weekly recurring tasks completing across month boundaries, and owner-level remove operations followed by re-scheduling.
