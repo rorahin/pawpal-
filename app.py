@@ -1,13 +1,22 @@
 import streamlit as st
-from pawpal_system import Task, Pet, Owner, Scheduler
+from pawpal_system import Task, Pet, Owner, Scheduler, save_data, load_data
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
 # ---------------------------------------------------------------------------
 # Session state bootstrap
 # ---------------------------------------------------------------------------
-# The Owner (and all pets/tasks nested inside it) lives in session_state so it
-# survives Streamlit reruns.  We never recreate it on reruns — only on first load.
+# Attempt to restore persisted data on the very first load of the session.
+# The "data_loaded" sentinel prevents re-loading on every Streamlit rerun.
+if "data_loaded" not in st.session_state:
+    st.session_state["data_loaded"] = True
+    restored = load_data()
+    if restored is not None:
+        st.session_state["owner"] = restored
+    else:
+        st.session_state["owner"] = Owner(name="", available_minutes_per_day=60)
+
+# Fallback: ensure owner key always exists (defensive guard for edge cases).
 if "owner" not in st.session_state:
     st.session_state["owner"] = Owner(name="", available_minutes_per_day=60)
 
@@ -56,7 +65,9 @@ if st.button("Add pet"):
     new_pet = Pet(name=pet_name, species=species, age=0, special_needs="")
     try:
         st.session_state["owner"].add_pet(new_pet)
+        save_data(st.session_state["owner"])
         st.success(f"{pet_name} added successfully!")
+        st.caption("Data saved.")
     except ValueError as e:
         st.error(str(e))
 
@@ -106,6 +117,16 @@ with col5:
 with col6:
     is_mandatory = st.checkbox("Mandatory task", value=False)
 
+# Slot suggestion — requires at least one pet so a Scheduler can be built.
+if owner.pets:
+    if st.button("Suggest Next Available Slot"):
+        scheduler_for_slot = Scheduler(owner)
+        suggested = scheduler_for_slot.find_next_available_slot(int(duration))
+        st.session_state["suggested_time"] = suggested
+
+    if "suggested_time" in st.session_state:
+        st.info(f"Suggested time: {st.session_state['suggested_time']}")
+
 if st.button("Add task"):
     if not owner.pets:
         st.warning("Add a pet first before adding tasks.")
@@ -140,9 +161,11 @@ if st.button("Add task"):
                         scheduled_time=raw_time,
                     )
                     target_pet.add_task(new_task)
+                    save_data(st.session_state["owner"])
                     st.success(
                         f"Task '{task_title}' added to {target_pet.name}!"
                     )
+                    st.caption("Data saved.")
                 except ValueError as e:
                     st.error(str(e))
 
@@ -307,9 +330,11 @@ else:
                     else:
                         try:
                             manage_task.mark_complete()
+                            save_data(st.session_state["owner"])
                             st.success(
                                 f"'{manage_task.name}' marked complete for {manage_pet.name}!"
                             )
+                            st.caption("Data saved.")
                         except RuntimeError as e:
                             st.error(str(e))
 
@@ -320,9 +345,11 @@ else:
                     else:
                         try:
                             manage_pet.remove_task(manage_task_name)
+                            save_data(st.session_state["owner"])
                             st.success(
                                 f"Task '{manage_task_name}' removed from {manage_pet.name}."
                             )
+                            st.caption("Data saved.")
                         except ValueError as e:
                             st.error(str(e))
         elif manage_pet:

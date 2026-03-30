@@ -9,6 +9,8 @@ The Scheduler takes an Owner and iterates Owner → Pets → Tasks to produce
 a prioritized daily care plan within the owner's available time.
 """
 
+import json
+import os
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -546,3 +548,189 @@ class Scheduler:
             )
 
         return warnings
+
+    def find_next_available_slot(self, duration: int) -> str:
+        """
+        Scan existing scheduled tasks sorted chronologically and find the first
+        gap between consecutive tasks that fits `duration` minutes.
+
+        Active tasks are those that are not completed and have a non-empty
+        scheduled_time in HH:MM format.
+
+        Rules:
+          - The day starts at 08:00 and ends at 22:00.
+          - Check the gap from 08:00 to the first task's start.
+          - Check gaps between consecutive task-end and next task-start.
+          - If no gap fits within the day, return the time right after the last
+            scheduled task ends (may exceed 22:00 if tasks are packed).
+          - If no active scheduled tasks exist, return "08:00".
+
+        Args:
+            duration: Desired slot length in minutes (must be > 0).
+
+        Returns:
+            A time string in HH:MM format.
+        """
+        if duration <= 0:
+            raise ValueError(f"duration must be > 0, got {duration}.")
+
+        today = date.today()
+
+        # Collect (start_minutes, end_minutes) for active scheduled tasks.
+        slots: list[tuple[int, int]] = []
+        for pet, task in self._collect_all_tasks():
+            if task.completed or task.due_date > today or not task.scheduled_time:
+                continue
+            try:
+                hh, mm = task.scheduled_time.split(":")
+                start = int(hh) * 60 + int(mm)
+                end = start + task.duration_minutes
+                slots.append((start, end))
+            except (ValueError, AttributeError):
+                continue
+
+        if not slots:
+            return "08:00"
+
+        slots.sort(key=lambda s: s[0])
+
+        day_start = 8 * 60   # 08:00 in minutes
+
+        # Gap before the first task.
+        first_start = slots[0][0]
+        gap_start = max(day_start, 0)
+        if first_start - gap_start >= duration:
+            candidate = max(day_start, gap_start)
+            return _minutes_to_hhmm(candidate)
+
+        # Gaps between consecutive tasks.
+        for i in range(len(slots) - 1):
+            gap_start = slots[i][1]
+            gap_end = slots[i + 1][0]
+            if gap_end - gap_start >= duration:
+                return _minutes_to_hhmm(gap_start)
+
+        # No gap found — return time after the last task ends.
+        return _minutes_to_hhmm(slots[-1][1])
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _minutes_to_hhmm(minutes: int) -> str:
+    """Convert an integer number of minutes since midnight to 'HH:MM' format."""
+    hh = minutes // 60
+    mm = minutes % 60
+    return f"{hh:02d}:{mm:02d}"
+
+
+# ---------------------------------------------------------------------------
+# Data persistence — module-level functions
+# ---------------------------------------------------------------------------
+
+def save_data(owner: Owner, filename: str = "pawpal_data.json") -> None:
+    """
+    Serialize the full Owner → Pet → Task object graph to JSON and write it
+    to `filename`.
+
+    All date fields are stored as ISO-format strings ('YYYY-MM-DD').
+    None values are preserved as JSON null.
+
+    Args:
+        owner:    The Owner whose data (including all pets and tasks) to save.
+        filename: Destination file path. Defaults to 'pawpal_data.json'.
+    """
+    def _task_to_dict(task: Task) -> dict:
+        return {
+            "name": task.name,
+            "category": task.category,
+            "duration_minutes": task.duration_minutes,
+            "priority": task.priority,
+            "completed": task.completed,
+            "mandatory": task.mandatory,
+            "scheduled_time": task.scheduled_time,
+            "recurrence": task.recurrence,
+            "due_date": task.due_date.isoformat(),
+            "last_completed_date": (
+                task.last_completed_date.isoformat()
+                if task.last_completed_date is not None
+                else None
+            ),
+        }
+
+    def _pet_to_dict(pet: Pet) -> dict:
+        return {
+            "name": pet.name,
+            "species": pet.species,
+            "age": pet.age,
+            "special_needs": pet.special_needs,
+            "tasks": [_task_to_dict(t) for t in pet.tasks],
+        }
+
+    payload = {
+        "name": owner.name,
+        "available_minutes_per_day": owner.available_minutes_per_day,
+        "pets": [_pet_to_dict(p) for p in owner.pets],
+    }
+
+    with open(filename, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2)
+
+
+def load_data(filename: str = "pawpal_data.json") -> "Owner | None":
+    """
+    Load and reconstruct the full Owner → Pet → Task object graph from JSON.
+
+    Args:
+        filename: Source file path. Defaults to 'pawpal_data.json'.
+
+    Returns:
+        A fully reconstructed Owner object, or None if the file does not exist.
+
+    Raises:
+        json.JSONDecodeError: If the file exists but contains malformed JSON.
+        KeyError / ValueError: If the file exists but has an unexpected schema.
+    """
+    if not os.path.exists(filename):
+        return None
+
+    with open(filename, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+
+    def _dict_to_task(d: dict) -> Task:
+        lcd_raw = d.get("last_completed_date")
+        return Task(
+            name=d["name"],
+            category=d["category"],
+            duration_minutes=d["duration_minutes"],
+            priority=d["priority"],
+            completed=d["completed"],
+            mandatory=d["mandatory"],
+            scheduled_time=d.get("scheduled_time", ""),
+            recurrence=d.get("recurrence", "none"),
+            due_date=date.fromisoformat(d["due_date"]),
+            last_completed_date=(
+                date.fromisoformat(lcd_raw) if lcd_raw is not None else None
+            ),
+        )
+
+    def _dict_to_pet(d: dict) -> Pet:
+        pet = Pet(
+            name=d["name"],
+            species=d["species"],
+            age=d.get("age", 0),
+            special_needs=d.get("special_needs", ""),
+        )
+        for task_dict in d.get("tasks", []):
+            pet.tasks.append(_dict_to_task(task_dict))
+        return pet
+
+    owner = Owner(
+        name=data["name"],
+        available_minutes_per_day=data["available_minutes_per_day"],
+    )
+    for pet_dict in data.get("pets", []):
+        owner.pets.append(_dict_to_pet(pet_dict))
+
+    return owner
