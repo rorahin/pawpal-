@@ -104,6 +104,8 @@ One tradeoff the scheduler makes is that it may skip lower-priority tasks when t
 
 This tradeoff is reasonable because the goal of the app is not to create a perfect schedule for every possible task, but to create a realistic daily plan that fits within actual time limits. In this scenario, it is better for the system to guarantee that essential care is completed than to overload the owner with an unrealistic plan that cannot be followed.
 
+A second tradeoff involves how `detect_time_conflicts()` defines a conflict. The method treats any two active tasks that share the same `scheduled_time` string as a conflict, regardless of whether their durations actually overlap. This is exact-time conflict detection rather than full interval-overlap detection. The simpler model is appropriate here because `Task` stores only a start time, not an end time, so there is no data available to compute true overlap. The consequence is a small risk of false positives — two tasks at `"09:00"` could theoretically be run back-to-back if one is short — but for a pet care app at this scale, flagging same-slot collisions for human review is both correct and proportionate. A full interval engine would require storing end times or deriving them from `duration_minutes`, adding model complexity that the current feature set does not justify.
+
 ---
 
 ## 3. AI Collaboration
@@ -147,3 +149,48 @@ This tradeoff is reasonable because the goal of the app is not to create a perfe
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+
+---
+
+## 6. Phase 4 — Algorithmic Layer: Planning Notes
+
+### Phase 4 Step 1 Complete
+
+**Status:** Step 1 (Review and Plan) is finalized as of 2026-03-29.
+
+**Round 1 Implementation Scope** is deliberately narrow. The goal is algorithm-only improvements with no model changes yet. Two and only two changes will be implemented in Step 2:
+
+1. Shortest-Job-First (SJF) tiebreaker inside `generate_plan()` — when two non-mandatory tasks share the same priority level, the shorter task is scheduled first to maximize the number of tasks that fit within available time.
+2. `Scheduler.check_conflicts()` method — detects cases where mandatory tasks collectively exceed `available_minutes_per_day` and returns a structured report of the conflict.
+
+**No filtering yet. No UI changes. No data model changes. No recurrence logic.**
+
+---
+
+### Round 1 Scope Lock
+
+The following is the complete and locked scope for Phase 4, Step 2. Nothing outside this list will be implemented in Round 1.
+
+| Item | In Scope |
+| --- | --- |
+| SJF tiebreaker in `generate_plan()` | Yes |
+| `Scheduler.check_conflicts()` method | Yes |
+| Filtering tasks by category or pet | No |
+| Changes to `explain_plan()` | No |
+| Changes to `app.py` (CLI/UI layer) | No |
+| New fields on `Task` (e.g., recurrence) | No |
+| Architectural refactoring | No |
+
+---
+
+### Implementation Boundaries
+
+The following actions are explicitly out of scope for Step 2 and must not be introduced:
+
+- **No filtering logic** — do not add category-based, pet-based, or time-of-day filtering to `generate_plan()` or any other method.
+- **No changes to `explain_plan()`** — the output format and signature stay as-is. Conflict reporting belongs in `check_conflicts()`, not here.
+- **No UI changes** — `app.py` is not touched. CLI commands, prompts, and output formatting are frozen for this round.
+- **No new fields on `Task`** — recurrence, scheduled time, and time-of-day preference are deferred. The `Task` dataclass stays at its current shape.
+- **No architectural refactoring** — class responsibilities, the `Owner → Pet → Task` hierarchy, and module boundaries are stable and will not be restructured.
+
+Purpose: enforce clean incremental development and prevent scope creep from derailing a focused algorithmic improvement round.
