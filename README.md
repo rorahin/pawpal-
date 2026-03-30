@@ -12,6 +12,16 @@ A busy pet owner needs help staying consistent with pet care. They want an assis
 
 Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
 
+## Features
+
+- **Task scheduling based on time and priority** — `Scheduler.generate_plan()` always includes mandatory tasks first, then fills remaining available minutes with non-mandatory tasks sorted high → medium → low priority, using task name as a stable tiebreaker.
+- **Sorting tasks by time** — `Scheduler.sort_by_time()` orders any task list chronologically by `scheduled_time` in HH:MM format; tasks with no scheduled time sort to the end.
+- **Filtering tasks by pet and completion status** — `Scheduler.filter_by_pet()` and `Scheduler.filter_by_status()` scope the task list to a specific pet or to completed/incomplete tasks; both are used live in the Streamlit UI.
+- **Recurring tasks (daily/weekly regeneration)** — completing a recurring task via `Pet.complete_recurring_task()` automatically creates the next occurrence with the correct future `due_date`; duplicate-future-instance protection prevents double creation.
+- **Conflict detection with warning messages** — `Scheduler.detect_time_conflicts()` flags active tasks that share a `scheduled_time` slot, labels same-pet versus cross-pet conflicts, and surfaces plain-language warnings in the UI without crashing the program.
+- **CLI demo + Streamlit UI integration** — all scheduling logic lives in `pawpal_system.py`; `app.py` connects it to a Streamlit interface with owner setup, pet management, task entry, live conflict warnings, filter controls, and a generated schedule view.
+- **Automated test suite (pytest)** — 40 tests across 6 tiers covering task validation, plan generation, recurring task state transitions, conflict detection, and filter/sort correctness.
+
 ## What you will build
 
 Your final app should:
@@ -88,3 +98,9 @@ python -m pytest tests/test_pawpal.py -v
 **Confidence Level:** ★★★★☆ (4/5)
 
 The suite provides strong coverage of core scheduling logic, recurring task state transitions, conflict detection rules, and input validation. Room remains for additional edge-case coverage: multi-pet plans with mixed mandatory/non-mandatory tasks and tight budgets, weekly recurring tasks completing across month boundaries, and owner-level remove operations followed by re-scheduling.
+
+## 📸 Demo
+
+<a href="images/pawpal_screenshot.png" target="_blank">
+  <img src='images/pawpal_screenshot.png' title='PawPal App' width='' alt='PawPal App' class='center-block' />
+</a>
