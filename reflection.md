@@ -110,15 +110,25 @@ A second tradeoff involves how `detect_time_conflicts()` defines a conflict. The
 
 ## 3. AI Collaboration
 
-**a. How you used AI**
+### a. AI Strategy (Copilot Usage)
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+**1. Which Copilot features were most effective?**
 
-**b. Judgment and verification**
+Different features proved most useful at different phases of the project. During the design phase, **Plan mode** was the most valuable tool — it was used to reason through class responsibilities before writing any code, specifically to challenge whether `Scheduler` should own the task list directly or whether `Pet` should own tasks and `Scheduler` should only navigate the `Owner → Pet → Task` hierarchy. Plan mode forced a structured rationale before committing to either approach, which prevented a costly architectural reversal later in the project. During implementation, **Agent mode with `#file` context** kept the AI grounded in the actual codebase: pinning `pawpal_system.py` as context meant suggestions for `generate_plan()`, `detect_time_conflicts()`, and `complete_recurring_task()` were aware of the existing data model — `PRIORITY_ORDER`, the `due_date` field, and the `mandatory` flag — rather than inventing new structures that would have conflicted with what was already built. During testing, **`#codebase` context** was most effective, allowing the AI to scan the full module and identify which behaviors had no test coverage yet — for example, the duplicate-future-instance protection path in `complete_recurring_task()` and the explicit exclusion of completed tasks from `detect_time_conflicts()`. The pattern held across all phases: Plan mode for design, `#file` for implementation, Agent mode with `#codebase` for testing and debugging.
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+**2. One concrete AI suggestion that was rejected or modified**
+
+The AI initially suggested storing tasks directly on `Scheduler` as a flat list — `self.tasks: list[Task]` — rather than having `Scheduler` navigate through `Owner → Pet → Task`. The reasoning offered was simplicity: one list is easier to sort and filter than a nested traversal. This was rejected because it violated the ownership hierarchy that gives the system its semantic structure. A `Task` without a parent `Pet` loses its context — conflict detection needs to know which pet owns which task to distinguish same-pet from cross-pet conflicts, and `filter_by_pet()` would have required storing a pet reference on each `Task`, coupling `Task` to `Pet` in a direction that violates encapsulation. The `Owner → Pet → Task` hierarchy was kept intact, and `Scheduler._collect_all_tasks()` was introduced as a thin internal method to flatten the hierarchy only when needed for iteration, keeping each class responsible for its own data.
+
+**3. How did using separate chat sessions help?**
+
+Keeping design, implementation, and testing in separate sessions prevented context pollution — a single long session accumulates stale assumptions, overruled design sketches, and half-implemented ideas that can resurface as suggestions in later turns, causing the AI to drift from decisions that were already settled. Each session started from a clean slate with only the current file state as ground truth, which made it easier to catch when the AI was drifting from the original design intent: if a testing-phase suggestion started reopening class responsibility questions, that was an immediate signal to redirect rather than a gradual erosion that might go unnoticed in a continuous session.
+
+### b. Lead Architect Reflection
+
+Working as lead architect on PawPal+ clarified that the most important skill in AI-assisted engineering is knowing when not to accept a suggestion. The AI is fast and fluent, but it optimizes for surface plausibility rather than system integrity — it will produce code that compiles and looks reasonable while quietly violating the separation of concerns you spent the design phase establishing. Guiding the AI rather than simply prompting it meant validating every generated method against the actual data model and asking whether it respected the contracts already defined: did `explain_plan()` duplicate work that `generate_plan()` already did, did `detect_time_conflicts()` correctly exclude completed and future-due tasks, did the recurring task logic properly guard against duplicate future instances. Keeping the `Owner → Pet → Task` hierarchy intact required deliberate decisions across multiple sessions — each time the AI suggested a shortcut that would have flattened or bypassed the hierarchy, that shortcut had to be identified and rejected with an explicit reason, not just a vague preference. The biggest lesson from this project is that AI accelerates execution but the architect still owns every design decision that gets committed: accepting the first output blindly would have produced a system that worked in the happy path but broke down under the edge cases the test suite was specifically designed to expose.
+
+---
 
 ---
 
